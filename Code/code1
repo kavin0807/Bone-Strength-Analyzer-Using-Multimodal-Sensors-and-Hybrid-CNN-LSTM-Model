@@ -1,0 +1,78 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+import joblib
+
+# 1. Load dataset
+df = pd.read_csv("dataset.csv")
+
+# 2. Drop unwanted columns
+df = df.drop(columns=['sample_id', 'subject_id'])
+
+# 3. Separate features and target
+X = df.drop(columns=['bone_strength'])
+y = df['bone_strength']
+
+# 4. Scale features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+joblib.dump(scaler, "scaler.pkl")
+print("✅ Scaler saved as scaler.pkl")
+
+# 5. Reshape for LSTM: (samples, timesteps, features)
+#    Assuming each sample is one timestep (no sequence data)
+#    If you have real sequential data, adjust accordingly
+X_scaled = np.expand_dims(X_scaled, axis=1)
+
+# 6. Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.2, random_state=42
+)
+
+# 7. Build LSTM model
+model = Sequential([
+    LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2]), return_sequences=False),
+    Dropout(0.2),
+    Dense(32, activation='relu'),
+    Dense(1)  # Output layer for regression
+])
+
+model.compile(optimizer='adam', loss='mae', metrics=['mse'])
+model.summary()
+
+# 8. Train model
+early_stop = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
+
+history = model.fit(
+    X_train, y_train,
+    validation_data=(X_test, y_test),
+    epochs=200,
+    batch_size=32,
+    callbacks=[early_stop],
+    verbose=1
+)
+
+# 9. Evaluate model
+loss, mse = model.evaluate(X_test, y_test, verbose=0)
+print(f"✅ Test MAE (Loss): {loss:.4f}")
+print(f"✅ Test MSE: {mse:.4f}")
+
+# 10. Predict and plot
+y_pred = model.predict(X_test)
+
+plt.figure(figsize=(8,6))
+plt.scatter(y_test, y_pred, alpha=0.7)
+plt.xlabel("Actual Bone Strength")
+plt.ylabel("Predicted Bone Strength")
+plt.title("LSTM Regression: Actual vs Predicted")
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+plt.show()
+
+# 11. Save model
+model.save("bone_strength_lstm_model.h5")
+print("✅ LSTM model saved as bone_strength_lstm_model.h5")
